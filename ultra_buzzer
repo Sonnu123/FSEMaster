@@ -3,49 +3,55 @@
 import RPi.GPIO as GPIO
 import time
 
-# Define GPIO pins
-TRIG = 11
-ECHO = 12
-BuzzerPin = 13
-motionPin = 15  # Changed to an available pin to avoid conflict
+# Define GPIO pins using BCM numbering
+TRIG = 17         # GPIO17
+ECHO = 18         # GPIO18
+BuzzerPin = 27    # GPIO27 (You can change this to any available GPIO pin connected to your buzzer)
 
 def setup():
-    GPIO.setmode(GPIO.BOARD)
+    GPIO.setwarnings(False)  # Disable warnings if GPIO was not properly cleaned up before
+    GPIO.setmode(GPIO.BCM)
     # Setup for ultrasonic sensor
     GPIO.setup(TRIG, GPIO.OUT)
     GPIO.setup(ECHO, GPIO.IN)
 
     # Setup for buzzer
     GPIO.setup(BuzzerPin, GPIO.OUT)
-    GPIO.output(BuzzerPin, GPIO.HIGH)
-    
-    # Setup for motion sensor
-    GPIO.setup(motionPin, GPIO.IN)
-    # Allow the motion sensor to initialize
-    print("Waiting for motion sensor to settle...")
-    time.sleep(10)  # Adjust if your motion sensor requires a different settling time
-    print("Motion sensor is ready.")
+    GPIO.output(BuzzerPin, GPIO.HIGH)  # Ensure buzzer is off initially
 
 def distance():
+    # Ensure the TRIG pin is set low
     GPIO.output(TRIG, False)
-    time.sleep(0.000002)
+    time.sleep(0.0002)
+
+    # Send a 10us pulse to TRIG
     GPIO.output(TRIG, True)
     time.sleep(0.00001)
     GPIO.output(TRIG, False)
 
+    # Initialize variables
+    StartTime = time.time()
+    StopTime = time.time()
+
     # Save StartTime
-    while GPIO.input(ECHO) == 0:
+    timeout = StartTime + 0.04  # 40ms timeout
+    while GPIO.input(ECHO) == 0 and StartTime < timeout:
         StartTime = time.time()
 
     # Save time of arrival
-    while GPIO.input(ECHO) == 1:
+    timeout = StartTime + 0.04
+    while GPIO.input(ECHO) == 1 and StopTime < timeout:
         StopTime = time.time()
 
     # Time difference between start and arrival
     TimeElapsed = StopTime - StartTime
-    # Multiply with the sonic speed (340 m/s)
-    # and divide by 2, because there and back
-    distance_cm = (TimeElapsed * 34000) / 2
+
+    # If the sensor timed out, return a large distance
+    if TimeElapsed >= 0.04:
+        return 1000  # Arbitrary large distance in cm
+
+    # Calculate distance
+    distance_cm = (TimeElapsed * 34300) / 2
     return distance_cm
 
 def buzzer_on():
@@ -62,26 +68,23 @@ def beep(duration):
 
 def loop():
     while True:
-        motion = GPIO.input(motionPin)
-        if motion:
-            print("Motion detected!")
-            dis = distance()
-            print(f"Distance: {dis:.2f} cm")
-            # Buzzer logic
-            if dis < 5:
-                buzzer_on()
-            elif dis < 100:
-                # Decrease beep interval as object gets closer
-                beep_interval = (dis - 5) / 200.0  # Adjust scaling as needed
-                beep(beep_interval)
-            else:
-                buzzer_off()
+        dis = distance()
+        print(f"Distance: {dis:.2f} cm")
+        # Buzzer logic
+        if dis < 5:
+            buzzer_on()
+        elif dis < 100:
+            # Decrease beep interval as object gets closer
+            beep_interval = (dis - 5) / 200.0  # Adjust scaling as needed
+            if beep_interval < 0.05:
+                beep_interval = 0.05  # Minimum beep interval
+            beep(beep_interval)
         else:
-            print("No motion detected.")
             buzzer_off()
         time.sleep(0.1)
 
 def destroy():
+    buzzer_off()
     GPIO.cleanup()
 
 if __name__ == "__main__":
