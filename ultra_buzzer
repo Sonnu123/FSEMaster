@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+
+import RPi.GPIO as GPIO
+import time
+
+# Define GPIO pins
+TRIG = 11
+ECHO = 12
+BuzzerPin = 13
+motionPin = 15  # Changed to an available pin to avoid conflict
+
+def setup():
+    GPIO.setmode(GPIO.BOARD)
+    # Setup for ultrasonic sensor
+    GPIO.setup(TRIG, GPIO.OUT)
+    GPIO.setup(ECHO, GPIO.IN)
+
+    # Setup for buzzer
+    GPIO.setup(BuzzerPin, GPIO.OUT)
+    GPIO.output(BuzzerPin, GPIO.HIGH)
+    
+    # Setup for motion sensor
+    GPIO.setup(motionPin, GPIO.IN)
+    # Allow the motion sensor to initialize
+    print("Waiting for motion sensor to settle...")
+    time.sleep(10)  # Adjust if your motion sensor requires a different settling time
+    print("Motion sensor is ready.")
+
+def distance():
+    GPIO.output(TRIG, False)
+    time.sleep(0.000002)
+    GPIO.output(TRIG, True)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, False)
+
+    # Save StartTime
+    while GPIO.input(ECHO) == 0:
+        StartTime = time.time()
+
+    # Save time of arrival
+    while GPIO.input(ECHO) == 1:
+        StopTime = time.time()
+
+    # Time difference between start and arrival
+    TimeElapsed = StopTime - StartTime
+    # Multiply with the sonic speed (340 m/s)
+    # and divide by 2, because there and back
+    distance_cm = (TimeElapsed * 34000) / 2
+    return distance_cm
+
+def buzzer_on():
+    GPIO.output(BuzzerPin, GPIO.LOW)
+
+def buzzer_off():
+    GPIO.output(BuzzerPin, GPIO.HIGH)
+
+def beep(duration):
+    buzzer_on()
+    time.sleep(duration)
+    buzzer_off()
+    time.sleep(duration)
+
+def loop():
+    while True:
+        motion = GPIO.input(motionPin)
+        if motion:
+            print("Motion detected!")
+            dis = distance()
+            print(f"Distance: {dis:.2f} cm")
+            # Buzzer logic
+            if dis < 5:
+                buzzer_on()
+            elif dis < 100:
+                # Decrease beep interval as object gets closer
+                beep_interval = (dis - 5) / 200.0  # Adjust scaling as needed
+                beep(beep_interval)
+            else:
+                buzzer_off()
+        else:
+            print("No motion detected.")
+            buzzer_off()
+        time.sleep(0.1)
+
+def destroy():
+    GPIO.cleanup()
+
+if __name__ == "__main__":
+    setup()
+    try:
+        loop()
+    except KeyboardInterrupt:
+        destroy()
+        print('GPIO cleaned up and program terminated.')
