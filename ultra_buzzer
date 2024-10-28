@@ -3,62 +3,60 @@
 import RPi.GPIO as GPIO
 import time
 
-# Define GPIO pins using BCM numbering
-TRIG = 17         # GPIO17
-ECHO = 18         # GPIO18
-BuzzerPin = 27    # GPIO27 (You can change this to any available GPIO pin connected to your buzzer)
+# Use physical pin numbering
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False)
+
+# Define pin numbers using physical pins
+TRIG_PIN = 11       # Physical Pin 11 (GPIO17)
+ECHO_PIN = 12       # Physical Pin 12 (GPIO18)
+BUZZER_PIN = 13     # Physical Pin 13 (GPIO27)
 
 def setup():
-    GPIO.setwarnings(False)  # Disable warnings if GPIO was not properly cleaned up before
-    GPIO.setmode(GPIO.BCM)
-    # Setup for ultrasonic sensor
-    GPIO.setup(TRIG, GPIO.OUT)
-    GPIO.setup(ECHO, GPIO.IN)
-
-    # Setup for buzzer
-    GPIO.setup(BuzzerPin, GPIO.OUT)
-    GPIO.output(BuzzerPin, GPIO.HIGH)  # Ensure buzzer is off initially
+    # Set up GPIO pins
+    GPIO.setup(TRIG_PIN, GPIO.OUT)
+    GPIO.setup(ECHO_PIN, GPIO.IN)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
+    GPIO.output(BUZZER_PIN, GPIO.LOW)  # Ensure buzzer is off initially
 
 def distance():
-    # Ensure the TRIG pin is set low
-    GPIO.output(TRIG, False)
-    time.sleep(0.0002)
-
     # Send a 10us pulse to TRIG
-    GPIO.output(TRIG, True)
+    GPIO.output(TRIG_PIN, GPIO.LOW)
+    time.sleep(0.0002)
+    GPIO.output(TRIG_PIN, GPIO.HIGH)
     time.sleep(0.00001)
-    GPIO.output(TRIG, False)
+    GPIO.output(TRIG_PIN, GPIO.LOW)
 
-    # Initialize variables
-    StartTime = time.time()
-    StopTime = time.time()
+    # Initialize timing variables
+    start_time = time.time()
+    stop_time = time.time()
 
-    # Save StartTime
-    timeout = StartTime + 0.04  # 40ms timeout
-    while GPIO.input(ECHO) == 0 and StartTime < timeout:
-        StartTime = time.time()
+    # Wait for ECHO_PIN to go high
+    timeout = time.time() + 0.04  # 40ms timeout
+    while GPIO.input(ECHO_PIN) == 0 and time.time() < timeout:
+        start_time = time.time()
 
-    # Save time of arrival
-    timeout = StartTime + 0.04
-    while GPIO.input(ECHO) == 1 and StopTime < timeout:
-        StopTime = time.time()
+    # Wait for ECHO_PIN to go low
+    timeout = time.time() + 0.04
+    while GPIO.input(ECHO_PIN) == 1 and time.time() < timeout:
+        stop_time = time.time()
 
-    # Time difference between start and arrival
-    TimeElapsed = StopTime - StartTime
+    # Calculate time difference
+    time_elapsed = stop_time - start_time
 
-    # If the sensor timed out, return a large distance
-    if TimeElapsed >= 0.04:
-        return 1000  # Arbitrary large distance in cm
+    # Check for timeout
+    if time.time() >= timeout:
+        return None  # Indicate no valid reading
 
-    # Calculate distance
-    distance_cm = (TimeElapsed * 34300) / 2
+    # Calculate distance (speed of sound is 34300 cm/s)
+    distance_cm = (time_elapsed * 34300) / 2
     return distance_cm
 
 def buzzer_on():
-    GPIO.output(BuzzerPin, GPIO.LOW)
+    GPIO.output(BUZZER_PIN, GPIO.HIGH)
 
 def buzzer_off():
-    GPIO.output(BuzzerPin, GPIO.HIGH)
+    GPIO.output(BUZZER_PIN, GPIO.LOW)
 
 def beep(duration):
     buzzer_on()
@@ -69,18 +67,19 @@ def beep(duration):
 def loop():
     while True:
         dis = distance()
-        print(f"Distance: {dis:.2f} cm")
-        # Buzzer logic
-        if dis < 5:
-            buzzer_on()
-        elif dis < 100:
-            # Decrease beep interval as object gets closer
-            beep_interval = (dis - 5) / 200.0  # Adjust scaling as needed
-            if beep_interval < 0.05:
-                beep_interval = 0.05  # Minimum beep interval
-            beep(beep_interval)
-        else:
+        if dis is None:
+            print("Out of range")
             buzzer_off()
+        else:
+            print(f"Distance: {dis:.2f} cm")
+            if dis < 5:
+                buzzer_on()
+            elif dis < 100:
+                # Calculate beep interval based on distance
+                beep_interval = max((dis - 5) / 200.0, 0.05)
+                beep(beep_interval)
+            else:
+                buzzer_off()
         time.sleep(0.1)
 
 def destroy():
@@ -88,9 +87,9 @@ def destroy():
     GPIO.cleanup()
 
 if __name__ == "__main__":
-    setup()
     try:
+        setup()
         loop()
     except KeyboardInterrupt:
         destroy()
-        print('GPIO cleaned up and program terminated.')
+        print("Program terminated and GPIO cleaned up.")
